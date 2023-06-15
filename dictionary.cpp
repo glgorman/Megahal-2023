@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <vector>
 
 #if 0
 #include <unistd.h>
@@ -27,6 +28,57 @@
 
 extern DICTIONARY *grt;
 
+STRING &symbol_table::operator [] (int i)
+{
+	return *(&entry[i]);
+}
+
+bool symbol_table::resize (int sz)
+{
+	if(entry==NULL)
+		entry=(STRING *)malloc((sz)*sizeof(STRING));
+	else
+	    entry=(STRING *)realloc(entry,sz*sizeof(STRING));
+	size = sz;
+
+	if(entry==NULL) {
+		size = 0;
+	    intrinsics::error("reply", "Unable to reallocate dictionary");
+	    return false;
+	}
+	if	(index==NULL) {
+		index=(BYTE2 *)malloc(sizeof(BYTE2)*size);
+    }
+	else
+		index=(BYTE2 *)realloc((BYTE2*)(index),sizeof(BYTE2)*(size));
+  
+    if	(index==NULL) {
+		intrinsics::error("add_word", "Unable to reallocate the index.");
+		return false;
+    }
+	return true;
+}
+
+void symbol_table::append (STRING &word)
+{
+	int pos = size;
+	resize (size+1);
+	entry[pos].length=word.length;
+	entry[pos].word=word.word;
+}
+
+void symbol_table::prepend (STRING &word)
+{
+	int i;
+	resize (size+1);
+	for(i=size-1; i>0; --i) {
+	    entry[i].length=entry[i-1].length;
+	    entry[i].word=entry[i-1].word;
+	}
+	entry[0].length=word.length;
+	entry[0].word=word.word;
+}
+
 /*---------------------------------------------------------------------------*/
 
 /*
@@ -40,80 +92,59 @@ extern DICTIONARY *grt;
 BYTE2 DICTIONARY::add_word(STRING word)
 {
 	DICTIONARY *dictionary = this;
-    register int i;
-    int position;
+    int i, position, sz;
     bool found;
 
     /*
      *		If the word's already in the dictionary, there is no need to add it
      */
     position=search_dictionary(word, &found);
-    if(found==TRUE) goto succeed;
+    if(found==TRUE)
+		goto succeed;
 
-    /*
-     *		Increase the number of words in the dictionary
-     */
-    dictionary->size+=1;
+	/*
+		Increase the size of the array to accomodate another element
+	*/
+	sz = symbol_table::size+1;
+	bool status = symbol_table::resize(sz);
 
-    /*
-     *		Allocate one more entry for the word index
-     */
-    if(dictionary->index==NULL) {
-	dictionary->index=(BYTE2 *)malloc(sizeof(BYTE2)*
-					  (dictionary->size));
-    } else {
-	dictionary->index=(BYTE2 *)realloc((BYTE2 *)
-					   (dictionary->index),sizeof(BYTE2)*(dictionary->size));
-    }
-    if(dictionary->index==NULL) {
-	intrinsics::error("add_word", "Unable to reallocate the index.");
-	goto fail;
-    }
-
-    /*
-     *		Allocate one more entry for the word array
-     */
-    if(dictionary->entry==NULL) {
-	dictionary->entry=(STRING *)malloc(sizeof(STRING)*(dictionary->size));
-    } else {
-	dictionary->entry=(STRING *)realloc((STRING *)(dictionary->entry),
-					    sizeof(STRING)*(dictionary->size));
-    }
-    if(dictionary->entry==NULL) {
-	intrinsics::error("add_word", "Unable to reallocate the dictionary to %d elements.", dictionary->size);
+    if(status==false) {
+	intrinsics::error("add_word", "Unable to reallocate the dictionary to %d elements.",sz);
 	goto fail;
     }
 
     /*
      *		Copy the new word into the word array
      */
-    dictionary->entry[dictionary->size-1].length=word.length;
-    dictionary->entry[dictionary->size-1].word=(char *)malloc(sizeof(char)*
-							      (word.length));
-    if(dictionary->entry[dictionary->size-1].word==NULL) {
-	intrinsics::error("add_word", "Unable to allocate the word.");
-	goto fail;
+	char *str = (char *)malloc(sizeof(char)*(word.length));
+    symbol_table::entry[symbol_table::size-1].length=word.length;
+    symbol_table::entry[symbol_table::size-1].word = str;
+
+    if((*dictionary)[symbol_table::size-1].word==NULL) {
+		intrinsics::error("add_word", "Unable to allocate the word.");
+		goto fail;
     }
-    for(i=0; i<word.length; ++i)
-	dictionary->entry[dictionary->size-1].word[i]=word.word[i];
+	for(i=0; i<word.length; ++i)
+		(*dictionary)[symbol_table::size-1].word[i]=word.word[i];
 
     /*
      *		Shuffle the word index to keep it sorted alphabetically
      */
-    for(i=(dictionary->size-1); i>position; --i)
-	dictionary->index[i]=dictionary->index[i-1];
+    for(i=(symbol_table::size-1); i>position; --i)
+	dictionary->index[i]=symbol_table::index[i-1];
 
     /*
      *		Copy the new symbol identifier into the word index
      */
-    dictionary->index[position]=dictionary->size-1;
+    dictionary->index[position]=symbol_table::size-1;
 
 succeed:
-    return(dictionary->index[position]);
+    return(symbol_table::index[position]);
 
 fail:
     return(0);
 }
+
 
 /*---------------------------------------------------------------------------*/
 
@@ -136,7 +167,7 @@ int DICTIONARY::search_dictionary(STRING word, bool *find)
     /*
      *		If the dictionary is empty, then obviously the word won't be found
      */
-    if(dictionary->size==0) {
+    if(symbol_table::size==0) {
 	position=0;
 	goto notfound;
     }
@@ -145,7 +176,7 @@ int DICTIONARY::search_dictionary(STRING word, bool *find)
      *		Initialize the lower and upper bounds of the search
      */
     min=0;
-    max=dictionary->size-1;
+    max=symbol_table::size-1;
     /*
      *		Search repeatedly, halving the search space each time, until either
      *		the entry is found, or the search space becomes empty
@@ -156,7 +187,7 @@ int DICTIONARY::search_dictionary(STRING word, bool *find)
 	 *		than, equal to, or less than the element being searched for.
 	 */
 	middle=(min+max)/2;
-	compar=STRING::wordcmp(word, dictionary->entry[dictionary->index[middle]]);
+	compar=STRING::wordcmp(word, (*dictionary)[dictionary->index[middle]]);
 	/*
 	 *		If it is equal then we have found the element.  Otherwise we
 	 *		can halve the search space accordingly.
@@ -246,7 +277,8 @@ int STRING::wordcmp(STRING word1, STRING word2)
  */
 void DICTIONARY::free_dictionary(DICTIONARY *dictionary)
 {
-    if(dictionary==NULL) return;
+    if(dictionary==NULL)
+		return;
     if(dictionary->entry!=NULL) {
 	free(dictionary->entry);
 	dictionary->entry=NULL;
@@ -255,7 +287,7 @@ void DICTIONARY::free_dictionary(DICTIONARY *dictionary)
 	free(dictionary->index);
 	dictionary->index=NULL;
     }
-    dictionary->size=0;
+    dictionary->symbol_table::size=0;
 }
 
 
@@ -294,9 +326,9 @@ DICTIONARY *DICTIONARY::new_dictionary(void)
 	return(NULL);
     }
 
-    dictionary->size=0;
-    dictionary->index=NULL;
-    dictionary->entry=NULL;
+    dictionary->symbol_table::size=0;
+    dictionary->symbol_table::index=NULL;
+    dictionary->symbol_table::entry=NULL;
 
     return(dictionary);
 }
@@ -314,11 +346,11 @@ void DICTIONARY::save_dictionary(FILE *file)
 	int i;
 	DICTIONARY *dictionary = this;
 
-    fwrite(&(dictionary->size), sizeof(BYTE4), 1, file);
+    fwrite(&(symbol_table::size), sizeof(BYTE4), 1, file);
     intrinsics::progress("Saving dictionary", 0, 1);
-    for(i=0; i<dictionary->size; ++i) {
-	STRING::save_word(file, dictionary->entry[i]);
-	intrinsics::progress(NULL, i, dictionary->size);
+    for(i=0; i<symbol_table::size; ++i) {
+	STRING::save_word(file, symbol_table::entry[i]);
+	intrinsics::progress(NULL, i, symbol_table::size);
     }
     intrinsics::progress(NULL, 1, 1);
 }
@@ -408,8 +440,8 @@ OPCODES DICTIONARY::execute_command(DICTIONARY *words, int *position)
     /*
      *		If there is only one word, then it can't be a command.
      */
-    *position=words->size+1;
-    if(words->size<=1)
+    *position=words->symbol_table::size+1;
+    if(words->symbol_table::size<=1)
 		return(UNKNOWN);
 
     /*
@@ -419,11 +451,11 @@ OPCODES DICTIONARY::execute_command(DICTIONARY *words, int *position)
      *		Following word is a number, then change the judge.  Otherwise,
      *		continue the search.
      */
-    for(i=0; i<words->size-1; ++i)
+    for(i=0; i<words->symbol_table::size-1; ++i)
 	/*
 	 *		The command prefix was found.
 	 */
-	if(words->entry[i].word[words->entry[i].length - 1] == '#') {
+	if(words->entry[i].word[words->symbol_table::entry[i].length - 1] == '#') {
 	    /*
 	     *		Look for a command word.
 	     */
@@ -453,10 +485,7 @@ OPCODES DICTIONARY::execute_command(DICTIONARY *words, int *position)
 void DICTIONARY::show_dictionary()
 {
 	DICTIONARY *dictionary = this;
-//    register
-	int i;
-//    register
-	int j;
+	int i, j;
     FILE *file;
 
     errno_t err = fopen_s (&file,"megahal.dic", "w");
@@ -465,9 +494,9 @@ void DICTIONARY::show_dictionary()
 	return;
     }
 
-    for(i=0; i<dictionary->size; ++i) {
-	for(j=0; j<dictionary->entry[i].length; ++j)
-	    fprintf(file, "%c", dictionary->entry[i].word[j]);
+    for(i=0; i<symbol_table::size; ++i) {
+	for(j=0; j<symbol_table::entry[i].length; ++j)
+	    fprintf(file, "%c",symbol_table::entry[i].word[j]);
 	fprintf(file, "\n");
     }
 
@@ -511,19 +540,19 @@ void DICTIONARY::make_words(char *input)
 	    /*
 	     *		Add the word to the dictionary
 	     */
-	    if(words->entry==NULL)
-		words->entry=(STRING *)malloc((words->size+1)*sizeof(STRING));
+	    if(symbol_table::entry==NULL)
+		symbol_table::entry=(STRING *)malloc((symbol_table::size+1)*sizeof(STRING));
 	    else
-		words->entry=(STRING *)realloc(words->entry, (words->size+1)*sizeof(STRING));
+		symbol_table::entry=(STRING *)realloc(words->entry, (symbol_table::size+1)*sizeof(STRING));
 
-	    if(words->entry==NULL) {
+	    if(symbol_table::entry==NULL) {
 			intrinsics::error("make_words", "Unable to reallocate dictionary");
 		return;
 	    }
 
-	    words->entry[words->size].length=offset;
-	    words->entry[words->size].word=input;
-	    words->size+=1;
+	    symbol_table::entry[symbol_table::size].length=offset;
+	    symbol_table::entry[symbol_table::size].word=input;
+	    symbol_table::size+=1;
 
 	    if(offset==(int)strlen(input)) break;
 	    input+=offset;
@@ -538,24 +567,25 @@ void DICTIONARY::make_words(char *input)
      *		full-stop character.
      */
 	unsigned char c1;
-	c1 = words->entry[words->size-1].word[0];
+	c1 = symbol_table::entry[symbol_table::size-1].word[0];
     if(isalnum(c1)) {
-	if(words->entry==NULL)
-	    words->entry=(STRING *)malloc((words->size+1)*sizeof(STRING));
+	if(symbol_table::entry==NULL)
+	  symbol_table::entry=(STRING *)malloc((symbol_table::size+1)*sizeof(STRING));
 	else
-	    words->entry=(STRING *)realloc(words->entry, (words->size+1)*sizeof(STRING));
+	    words->entry=(STRING *)realloc(entry,(symbol_table::size+1)*sizeof(STRING));
+	words->entry=(STRING *)realloc(entry,(symbol_table::size+1)*sizeof(STRING));
 	if(words->entry==NULL) {
 	    intrinsics::error("make_words", "Unable to reallocate dictionary");
 	    return;
 	}
 
-	words->entry[words->size].length=1;
-	words->entry[words->size].word=".";
-	++words->size;
+	words->entry[symbol_table::size].length=1;
+	words->entry[symbol_table::size].word=".";
+	++symbol_table::size;
     }
-    else if(strchr("!.?", words->entry[words->size-1].word[words->entry[words->size-1].length-1])==NULL) {
-	words->entry[words->size-1].length=1;
-	words->entry[words->size-1].word=".";
+    else if(strchr("!.?", words->entry[symbol_table::size-1].word[words->entry[symbol_table::size-1].length-1])==NULL) {
+	words->entry[symbol_table::size-1].length=1;
+	words->entry[symbol_table::size-1].word=".";
     }
 
     return;
@@ -574,11 +604,11 @@ void DICTIONARY::make_greeting()
 	int i;
 	DICTIONARY *words = this;
 
-    for(i=0; i<words->size; ++i)
-		free(words->entry[i].word);
+    for(i=0; i<symbol_table::size; ++i)
+		free(symbol_table::entry[i].word);
     DICTIONARY::free_dictionary(words);
-    if(grt->size>0)
-		(void)words->add_word(grt->entry[intrinsics::rnd(grt->size)]);
+    if(grt->size()>0)
+		(void)words->add_word(grt->entry[intrinsics::rnd(grt->size())]);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -591,14 +621,15 @@ void DICTIONARY::make_greeting()
  */
 bool DICTIONARY::dissimilar(DICTIONARY *words1, DICTIONARY *words2)
 {
-//  register
-	int i;
-
-    if(words1->size!=words2->size)
-		  return(TRUE);
-    for(i=0; i<words1->size; ++i)
+	int i, sz;
+	
+	if(words1->size()!=words2->size())
+		return(TRUE);
+	sz = words1->size();
+    for(i=0; i<sz; ++i)
 		if(STRING::wordcmp(words1->entry[i], words2->entry[i])!=0)
 		return(TRUE);
+
     return(FALSE);
 }
 
@@ -613,11 +644,7 @@ char *DICTIONARY::make_output()
 {
 	DICTIONARY *words = this;
     static char *output=NULL;
-//  register
-	int i;
-//  register
-	int j;
-    int length;
+	int i, j, length, sz;
     static char *output_none=NULL;
 
     if(output_none==NULL)
@@ -631,14 +658,15 @@ char *DICTIONARY::make_output()
 	}
     }
 
-    if(words->size==0) {
+	if(symbol_table::size==0) {
 	if(output_none!=NULL)
  	    strcpy_s(output_none,39, "I am utterly speechless!");
 	return(output_none);
     }
 
     length=1;
-    for(i=0; i<words->size; ++i)
+	sz = symbol_table::size;
+    for(i=0; i<sz; ++i)
 		length+=words->entry[i].length;
 
     output=(char *)realloc(output, sizeof(char)*length);
@@ -650,7 +678,8 @@ char *DICTIONARY::make_output()
     }
 
     length=0;
-    for(i=0; i<words->size; ++i)
+	sz = symbol_table::size;
+    for(i=0; i<sz; ++i)
 	for(j=0; j<words->entry[i].length; ++j)
 	    output[length++]=words->entry[i].word[j];
 
@@ -668,13 +697,13 @@ char *DICTIONARY::make_output()
  */
 bool DICTIONARY::word_exists(STRING word)
 {
-//  register
-	int i;
+	int i, sz;
 	DICTIONARY *dictionary = this;
-
-    for(i=0; i<dictionary->size; ++i)
-	if(STRING::wordcmp(dictionary->entry[i], word)==0)
+	sz = symbol_table::size;
+	for(i=0; i<sz; ++i)
+	if(STRING::wordcmp((*dictionary)[i], word)==0)
 	    return(TRUE);
+
     return(FALSE);
 }
 
@@ -724,15 +753,15 @@ DICTIONARY *DICTIONARY::initialize_list(char *filename)
 
 void DICTIONARY::free_words()
 {
-//  register
-	int i;
+	int i, sz;
 	DICTIONARY *words = this;
 
     if(words == NULL)
 		return;
+	sz = symbol_table::size;
 
     if(words->entry != NULL)
-	for(i=0; i<words->size; ++i)
+	for(i=0; i<sz; ++i)
 		STRING::free_word(words->entry[i]);
 }
 

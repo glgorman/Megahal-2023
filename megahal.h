@@ -91,7 +91,21 @@ public:
 	static void cleanup(void);
 };
 
-class DICTIONARY
+class symbol_table
+{
+public:
+	bool resize (int sz);
+	STRING &operator [] (int j);
+	void append (STRING &word);
+	void prepend (STRING &word);
+
+protected:
+	BYTE4 size;
+	BYTE2 *index;
+	STRING *entry;
+};
+
+class DICTIONARY: public symbol_table
 {
 public:
 	static DICTIONARY *allocate ();
@@ -115,14 +129,20 @@ public:
 	bool word_exists(STRING word);
 	void show_dictionary();
 
+//  added refactorings in C++
+//	to allow access to base class from
+//	model, megahal, etc.
+	int size()
+	{
+		return symbol_table::size;
+	}
+	void resize(int sz)
+	{
+		symbol_table::size = sz;
+	}
+
 protected:
 	int search_dictionary(STRING, bool *);
-	
-public:
-//	BYTE4 size;
-	int	 size;
-    STRING *entry;
-    BYTE2 *index;
 };
 
 
@@ -146,17 +166,23 @@ class TREE;
 class NODE
 {
 public:
-    BYTE2 symbol;
-    BYTE4 usage;
+	BYTE4 usage;
     BYTE2 count;
-    BYTE2 branch;
-    NODE **tree;
+	NODE **tree;
+	BYTE2 symbol;
+	BYTE2 branch;
 	operator TREE* () { return reinterpret_cast<TREE*>(this); }
 };
 
 class TREE: public NODE
 {
 public:	
+	operator NODE* () { return reinterpret_cast<NODE*>(this); }
+//	BYTE1 symbol() { return NODE::symbol; }
+//	BYTE2 branch() { return NODE::branch; }
+//	BYTE4 usage() { return NODE::usage; }
+//	BYTE2 count() { return NODE::count; }
+
 	static TREE *allocate ();
 	static TREE *new_node(void);
 	static int search_node(TREE *, int, bool *);
@@ -168,7 +194,6 @@ public:
 	TREE *add_symbol(BYTE2 symbol);
 	void add_node(TREE *node, int position);
 	TREE *find_symbol_add(BYTE2 symbol);
-	operator NODE* () { return reinterpret_cast<NODE*>(this); }
 };
 
 class MODEL

@@ -117,8 +117,8 @@ TREE *TREE::add_symbol(BYTE2 symbol)
      *		Increment the symbol counts
      */
     if((node->count<65535)) {
-	node->count+=1;
-	tree->usage+=1;
+		node->count+=1;
+		tree->usage+=1;
     }
 
     return(node);
@@ -300,13 +300,16 @@ notfound:
 void TREE::save_tree(FILE *file, TREE *node)
 {
     static int level=0;
-//  register
 	int i;
+	BYTE2 symbol = node->symbol;
+	BYTE4 usage = node->usage;
+	BYTE2 count = node->count;
+	BYTE2 branch = node->branch;
 
-    fwrite(&(node->symbol), sizeof(BYTE2), 1, file);
-    fwrite(&(node->usage), sizeof(BYTE4), 1, file);
-    fwrite(&(node->count), sizeof(BYTE2), 1, file);
-    fwrite(&(node->branch), sizeof(BYTE2), 1, file);
+    fwrite(&symbol, sizeof(BYTE2), 1, file);
+    fwrite(&usage, sizeof(BYTE4), 1, file);
+    fwrite(&count, sizeof(BYTE2), 1, file);
+    fwrite(&branch, sizeof(BYTE2), 1, file);
 
     if(level==0)
 		intrinsics::progress("Saving tree", 0, 1);
@@ -336,8 +339,8 @@ void TREE::load_tree(FILE *file)
 	int i;
 
     fread(&(node->symbol), sizeof(BYTE2), 1, file);
-    fread(&(node->usage), sizeof(BYTE4), 1, file);
-    fread(&(node->count), sizeof(BYTE2), 1, file);
+	fread(&(node->usage), sizeof(BYTE4), 1, file);
+	fread(&(node->count), sizeof(BYTE2), 1, file);
     fread(&(node->branch), sizeof(BYTE2), 1, file);
 
     if(node->branch==0)

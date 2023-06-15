@@ -229,12 +229,10 @@ char *megahal::do_reply(char *input, int log)
     char *output = NULL;
 
     if (log != 0)
-	intrinsics::write_input(input);  /* log input if so desired */
+		intrinsics::write_input(input);  /* log input if so desired */
 
     intrinsics::upper(input);
-
     words->make_words(input);
-
     model0->learn(words);
     output = model0->generate_reply(words);
     intrinsics::capitalize(output);
@@ -495,15 +493,14 @@ void MODEL::initialize_context()
  */
 void MODEL::learn(DICTIONARY *words)
 {
-//  register
-	int i;
+	int i, sz;
 	MODEL *model = this;
     BYTE2 symbol;
 
     /*
      *		We only learn from inputs which are long enough
      */
-    if(words->size<=(model->order)) return;
+    if(words->size()<=(model->order)) return;
 
     /*
      *		Train the model in the forwards direction.  Start by initializing
@@ -511,13 +508,14 @@ void MODEL::learn(DICTIONARY *words)
      */
     model->initialize_context();
     model->context[0]=model->forward;
-    for(i=0; i<words->size; ++i) {
+	sz = words->size();
+    for(i=0; i<sz; ++i) {
 	/*
 	 *		Add the symbol to the model's dictionary if necessary, and then
 	 *		update the forward model accordingly.
 	 */
 	DICTIONARY *d = model->dictionary; 
-	symbol=d->add_word(words->entry[i]);
+	symbol=d->add_word((*words)[i]);
 	model->update_model(symbol);
     }
     /*
@@ -531,12 +529,13 @@ void MODEL::learn(DICTIONARY *words)
      */
     model->initialize_context();
     model->context[0]=model->backward;
-    for(i=words->size-1; i>=0; --i) {
+	sz = words->size()-1;
+    for(i=sz; i>=0; --i) {
 	/*
 	 *		Find the symbol in the model's dictionary, and then update
 	 *		the backward model accordingly.
 	 */
-	symbol=model->dictionary->find_word(words->entry[i]);
+	symbol=model->dictionary->find_word((*words)[i]);
 	model->update_model(symbol);
     }
     /*
@@ -669,7 +668,6 @@ bool MODEL::load_model(char *filename)
 	return(FALSE);
     }
 
-
     fread(cookie, sizeof(char), strlen(COOKIE), file);
     if(strncmp(cookie, COOKIE, strlen(COOKIE))!=0) {
 	intrinsics::warn("load_model", "File `%s' is not a MegaHAL brain", filename);
@@ -770,19 +768,18 @@ DICTIONARY *MODEL::make_keywords(DICTIONARY *words)
 {
 	MODEL *model = this;
     static DICTIONARY *keys=NULL;
-//  register
-	int i;
-//  register
-	int j;
-    int c;
+	int i, j, c, sz1,sz2;
 
     if(keys==NULL)
 		keys=DICTIONARY::new_dictionary();
-    for(i=0; i<keys->size; ++i)
-		free(keys->entry[i].word);
+
+	sz1 = keys->size();
+    for(i=0; i<sz1; ++i)
+		free((*keys)[i].word);
     DICTIONARY::free_dictionary(keys);
 
-    for(i=0; i<words->size; ++i) {
+	sz1 = words->size();
+    for(i=0; i<sz1; ++i) {
 	/*
 	 *		Find the symbol ID of the word.  If it doesn't exist in
 	 *		the model, or if it begins with a non-alphanumeric
@@ -790,27 +787,28 @@ DICTIONARY *MODEL::make_keywords(DICTIONARY *words)
 	 *		skip over it.
 	 */
 	c=0;
-	for(j=0; j<swp->size; ++j)
-	    if(STRING::wordcmp(swp->from[j], words->entry[i])==0) {
+	sz2 = swp->size;
+	for(j=0; j<sz2; ++j)
+	    if(STRING::wordcmp(swp->from[j], (*words)[i])==0) {
 		model->add_key(keys, swp->to[j]);
 		++c;
 	    }
 	if(c==0) 
-		model->add_key(keys, words->entry[i]);
+		model->add_key(keys, (*words)[i]);
     }
 
-    if(keys->size>0) for(i=0; i<words->size; ++i) {
+    if(keys->size()>0)
+		for(i=0; i<words->size(); ++i) {
 
 	c=0;
 	for(j=0; j<swp->size; ++j)
-	    if(STRING::wordcmp(swp->from[j], words->entry[i])==0) {
+	    if(STRING::wordcmp(swp->from[j], (*words)[i])==0) {
 		model->add_aux(keys, swp->to[j]);
 		++c;
 	    }
 	if(c==0)
-		model->add_aux(keys, words->entry[i]);
+		model->add_aux(keys, (*words)[i]);
     }
-
     return(keys);
 }
 
@@ -910,24 +908,7 @@ DICTIONARY *MODEL::reply(DICTIONARY *keys)
 		break;
 	start=FALSE;
 
-	/*
-	 *		Append the symbol to the reply dictionary.
-	 */
-	if(replies->entry==NULL)
-	    replies->entry=(STRING *)malloc((replies->size+1)*sizeof(STRING));
-	else
-	    replies->entry=(STRING *)realloc(replies->entry, (replies->size+1)*sizeof(STRING));
-	if(replies->entry==NULL) {
-	    intrinsics::error("reply", "Unable to reallocate dictionary");
-	    return(NULL);
-	}
-
-	replies->entry[replies->size].length=
-	    model->dictionary->entry[symbol].length;
-	replies->entry[replies->size].word=
-	    model->dictionary->entry[symbol].word;
-	replies->size+=1;
-
+	replies->append ((*model->dictionary)[symbol]);
 	/*
 	 *		Extend the current context of the model with the current symbol.
 	 */
@@ -945,8 +926,8 @@ DICTIONARY *MODEL::reply(DICTIONARY *keys)
      *		dictionary so that we can generate backwards to reach the
      *		beginning of the string.
      */
-    if(replies->size>0) for(i=MIN(replies->size-1, model->order); i>=0; --i) {
-	symbol=model->dictionary->find_word(replies->entry[i]);
+    if(replies->size()>0) for(i=MIN(replies->size()-1, model->order); i>=0; --i) {
+	symbol=model->dictionary->find_word((*replies)[i]);
 	model->update_context(symbol);
     }
 
@@ -958,31 +939,10 @@ DICTIONARY *MODEL::reply(DICTIONARY *keys)
 	 *		Get a random symbol from the current context.
 	 */
 	symbol=model->babble(keys, replies);
-	if((symbol==0)||(symbol==1)) break;
+	if((symbol==0)||(symbol==1))
+		break;
 
-	/*
-	 *		Prepend the symbol to the reply dictionary.
-	 */
-	if(replies->entry==NULL)
-	    replies->entry=(STRING *)malloc((replies->size+1)*sizeof(STRING));
-	else
-	    replies->entry=(STRING *)realloc(replies->entry, (replies->size+1)*sizeof(STRING));
-	if(replies->entry==NULL) {
-	    intrinsics::error("reply", "Unable to reallocate dictionary");
-	    return(NULL);
-	}
-
-	/*
-	 *		Shuffle everything up for the prepend.
-	 */
-	for(i=replies->size; i>0; --i) {
-	    replies->entry[i].length=replies->entry[i-1].length;
-	    replies->entry[i].word=replies->entry[i-1].word;
-	}
-
-	replies->entry[0].length=model->dictionary->entry[symbol].length;
-	replies->entry[0].word=model->dictionary->entry[symbol].word;
-	replies->size+=1;
+	replies->prepend ((*dictionary)[symbol]);
 
 	/*
 	 *		Extend the current context of the model with the current symbol.
@@ -1015,15 +975,15 @@ MATH_TYPE MODEL::evaluate_reply(DICTIONARY *keys, DICTIONARY *words)
     TREE *node;
     int num=0;
 
-    if(words->size<=0)
+    if(words->size()<=0)
 		return((MATH_TYPE)0.0);
 
 	model->initialize_context();
     model->context[0]=model->forward;
-    for(i=0; i<words->size; ++i) {
-	symbol=model->dictionary->find_word(words->entry[i]);
+    for(i=0; i<words->size(); ++i) {
+	symbol=model->dictionary->find_word((*words)[i]);
 
-	if(keys->find_word(words->entry[i])!=0) {
+	if(keys->find_word((*words)[i])!=0) {
 	    probability=(MATH_TYPE)0.0;
 	    count=0;
 	    ++num;
@@ -1045,10 +1005,10 @@ MATH_TYPE MODEL::evaluate_reply(DICTIONARY *keys, DICTIONARY *words)
 
     model->initialize_context();
     model->context[0]=model->backward;
-    for(i=words->size-1; i>=0; --i) {
-	symbol=model->dictionary->find_word(words->entry[i]);
+    for(i=words->size()-1; i>=0; --i) {
+	symbol=model->dictionary->find_word((*words)[i]);
 
-	if(keys->find_word(words->entry[i])!=0) {
+	if(keys->find_word((*words)[i])!=0) {
 	    probability=(MATH_TYPE)0.0;
 	    count=0;
 	    ++num;
@@ -1104,7 +1064,8 @@ int MODEL::babble(DICTIONARY *keys, DICTIONARY *words)
 	if(model->context[i]!=NULL)
 	    node=model->context[i];
 
-    if(node->branch==0) return(0);
+    if(node->branch==0)
+		return(0);
 
     /*
      *		Choose a symbol at random from this context.
@@ -1119,15 +1080,15 @@ int MODEL::babble(DICTIONARY *keys, DICTIONARY *words)
 	symbol=node->tree[i]->symbol;
 
 	if(
-	    (keys->find_word(model->dictionary->entry[symbol])!=0)&&
+	    (keys->find_word((*model->dictionary)[symbol])!=0)&&
 	    ((used_key==TRUE)||
-	     (config::aux->find_word(model->dictionary->entry[symbol])==0))&&
-	    (words->word_exists(model->dictionary->entry[symbol])==FALSE)
+	     (config::aux->find_word((*model->dictionary)[symbol])==0))&&
+	    (words->word_exists((*model->dictionary)[symbol])==FALSE)
 	    ) {
 	    used_key=TRUE;
 	    break;
 	}
-	count-=node->tree[i]->count;
+	count-=static_cast<TREE*>(node->tree[i])->count;
 	i=(i>=(node->branch-1))?0:i+1;
     }
 
@@ -1155,19 +1116,19 @@ int MODEL::seed(DICTIONARY *keys)
     if(model->context[0]->branch==0) symbol=0;
     else symbol=model->context[0]->tree[intrinsics::rnd(model->context[0]->branch)]->symbol;
 
-    if(keys->size>0) {
-	i=intrinsics::rnd(keys->size);
+    if(keys->size()>0) {
+	i=intrinsics::rnd(keys->size());
 	stop=i;
 	while(TRUE) {
 	    if(
-		(model->dictionary->find_word(keys->entry[i])!=0)&&
-		(config::aux->find_word(keys->entry[i])==0)
+		(model->dictionary->find_word((*keys)[i])!=0)&&
+		(config::aux->find_word((*keys)[i])==0)
 		) {
-		symbol=model->dictionary->find_word(keys->entry[i]);
+		symbol=model->dictionary->find_word((*keys)[i]);
 		return(symbol);
 	    }
 	    ++i;
-	    if(i==keys->size) i=0;
+	    if(i==keys->size()) i=0;
 	    if(i==stop)
 			return(symbol);
 	}
@@ -1410,16 +1371,16 @@ void MODEL::change_personality(DICTIONARY *command, int position, MODEL **model)
 	last = _strdup(directory);
     }
 
-    if((command == NULL)||((position+2)>=command->size)) {
+    if((command == NULL)||((position+2)>=command->size())) {
 	/* no dir set, so we leave it to whatever was set above */
     } else {
-		sz = sizeof(char)*(command->entry[position+2].length+1);
+		sz = sizeof(char)*((*command)[position+2].length+1);
         directory=(char *)realloc(directory,sz);
         if(directory == NULL)
             intrinsics::error("change_personality", "Unable to allocate directory");
-        strncpy_s (directory, sz, command->entry[position+2].word,
-                command->entry[position+2].length);
-        directory[command->entry[position+2].length]='\0';
+        strncpy_s (directory, sz, (*command)[position+2].word,
+                (*command)[position+2].length);
+        directory[(*command)[position+2].length]='\0';
     }
 
     load_personality(model);
